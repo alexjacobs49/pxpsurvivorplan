@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Next.js Dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/alexj/OneDrive/Documents/06 Claude Code/.claude/start-next.js"],
+      "port": 3002,
+      "autoPort": true
+    }
+  ]
+}

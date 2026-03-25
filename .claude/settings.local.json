@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdftotext \"Case 3 - Funding the Future.pdf\" -)"
+    ]
+  }
+}
