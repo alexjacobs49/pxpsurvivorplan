@@ -34,7 +34,12 @@ let state = {entries:[],activeEntryId:null};
 
 function load(){
   try{const s=localStorage.getItem('mm26survivor');if(s)Object.assign(state,JSON.parse(s));}catch(e){}
-  if(!state.entries.length){DEFAULT_ENTRIES.forEach((def,idx)=>{state.entries.push({id:'e'+idx,name:def.name,dayPicks:{},situational:{},burned:def.burned})});}
+  if(!state.entries.length){DEFAULT_ENTRIES.forEach((def,idx)=>{state.entries.push({id:'e'+idx,name:def.name,dayPicks:{},situational:{},burned:def.burned})});}else{
+    state.entries.forEach(e=>{
+      if(!e.dayPicks)e.dayPicks={};if(!e.situational)e.situational={};
+      if(e.picks){delete e.picks;}if(e.dayPicks.length===undefined)e.dayPicks={};
+    });
+  }
   if(!state.activeEntryId&&state.entries.length)state.activeEntryId=state.entries[0].id;
 }
 
@@ -124,6 +129,7 @@ function getHigherSeedTeam(team1,team2){
 
 function renderBracket(entry){
   const burned=entry.burned||[];
+  if(!entry.dayPicks)entry.dayPicks={};if(!entry.situational)entry.situational={};
   const s16Day=entry.dayPicks.S16||[];
   const s16Sit=entry.situational.S16||[];
   const s16All=[...s16Day,...s16Sit];
