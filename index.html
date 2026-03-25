@@ -44,13 +44,49 @@ function activeEntry(){return state.entries.find(e=>e.id===state.activeEntryId);
 
 function reset(){if(!confirm('Reset all?'))return;localStorage.removeItem('mm26survivor');state.entries=[];DEFAULT_ENTRIES.forEach((def,idx)=>{state.entries.push({id:'e'+idx,name:def.name,picks:{},dayPicks:{},burned:def.burned})});state.activeEntryId=state.entries[0].id;save();render();}
 
+function findGameWithTeam(team,round){
+  const games=round==='S16'?S16_GAMES:[];
+  return games.find(g=>g.teams.includes(team));
+}
+
+function getGroup(team){
+  const t=TEAMS.find(x=>x.name===team);
+  return(t.region==='South'||t.region==='West')?1:2;
+}
+
 function setPick(entryId,round,team,isDay){
   const e=state.entries.find(x=>x.id===entryId);if(!e)return;
   if(!e.picks)e.picks={};if(!e.dayPicks)e.dayPicks={};
   if(!e.picks[round])e.picks[round]=[];
   const idx=e.picks[round].indexOf(team);
-  if(idx>=0){e.picks[round].splice(idx,1);if(e.dayPicks[round]){e.dayPicks[round]=e.dayPicks[round].filter(t=>t!==team);}}
-  else{e.picks[round].push(team);if(isDay){if(!e.dayPicks[round])e.dayPicks[round]=[];e.dayPicks[round].push(team);}}
+  if(idx>=0){
+    e.picks[round].splice(idx,1);if(e.dayPicks[round]){e.dayPicks[round]=e.dayPicks[round].filter(t=>t!==team);}
+  }else{
+    if(round==='S16'||round==='E8'){
+      const game=findGameWithTeam(team,round);
+      if(game){
+        const otherTeam=game.teams.find(t=>t!==team);
+        if(e.picks[round].includes(otherTeam)){return;}
+      }
+    }
+    e.picks[round].push(team);
+    if(isDay){
+      if(!e.dayPicks[round])e.dayPicks[round]=[];
+      if(round==='S16'||round==='E8'){
+        const group=getGroup(team);
+        const groupRegions=group===1?['South','West']:['East','Midwest'];
+        const teamRegion=TEAMS.find(x=>x.name===team).region;
+        const otherRegions=groupRegions.filter(r=>r!==teamRegion);
+        otherRegions.forEach(r=>{
+          const teamsInRegion=(e.picks[round]||[]).filter(t=>TEAMS.find(x=>x.name===t&&x.region===r));
+          teamsInRegion.forEach(t=>{
+            e.dayPicks[round]=(e.dayPicks[round]||[]).filter(x=>x!==t);
+          });
+        });
+      }
+      e.dayPicks[round].push(team);
+    }
+  }
   save();render();
 }
 
@@ -63,6 +99,12 @@ function render(){
   if(entry){html+=renderBracket(entry);}else{html+='<div class="text-center text-gray-500 mt-20">No entry</div>';}
   html+='</div></div>';
   document.getElementById('app').innerHTML=html;
+}
+
+function getHigherSeedTeam(team1,team2){
+  const t1=TEAMS.find(x=>x.name===team1);
+  const t2=TEAMS.find(x=>x.name===team2);
+  return t1.seed<t2.seed?team1:team2;
 }
 
 function renderBracket(entry){
@@ -107,8 +149,13 @@ function renderBracket(entry){
     html+='<div><div class="text-xs text-gray-500 mb-1">'+r+'</div><div class="bg-gray-800/30 rounded border border-gray-700 p-2 space-y-0.5 min-h-20">';
     if(regionPicks.length>0){
       regionPicks.forEach(t=>html+=teamBtn(t,'E8',false));
-      html+='<div class="text-xs text-gray-600 mt-1 pt-1 border-t border-gray-700">+ Add:</div>';
-      availTeams.filter(t=>TEAMS.find(x=>x.name===t&&x.region===r)).slice(0,2).forEach(t=>html+=teamBtn(t,'E8',false));
+      const regionGames=S16_GAMES.filter(g=>g.region===r);
+      const unpickedGames=regionGames.filter(g=>!g.teams.some(t=>s16Picks.includes(t)));
+      if(unpickedGames.length>0){
+        html+='<div class="text-xs text-gray-600 mt-1 pt-1 border-t border-gray-700">+ Add:</div>';
+        const addTeam=unpickedGames.length>0?getHigherSeedTeam(unpickedGames[0].teams[0],unpickedGames[0].teams[1]):null;
+        if(addTeam&&availTeams.includes(addTeam))html+=teamBtn(addTeam,'E8',false);
+      }
     }else{html+='<div class="text-xs text-gray-600">Pick S16</div>';}
     html+='</div></div>';
   });
@@ -117,15 +164,27 @@ function renderBracket(entry){
   // FF
   html+='<div><div class="text-sm font-bold text-yellow-400 mb-4">Final 4</div><div class="space-y-4 w-44">';
   html+='<div><div class="text-xs text-gray-500 mb-1">Semi 1</div><div class="bg-gray-800/30 rounded border border-gray-700 p-2 space-y-0.5 min-h-20">';
-  if(e8Picks.length>0){e8Picks.slice(0,2).forEach(t=>html+=teamBtn(t,'FF',false));html+='<div class="text-xs text-gray-600 mt-1">+ Add:</div>';availTeams.slice(0,2).forEach(t=>html+=teamBtn(t,'FF',false));}else{html+='<div class="text-xs text-gray-600">Pick E8</div>';}
+  if(e8Picks.length>0){
+    e8Picks.slice(0,2).forEach(t=>html+=teamBtn(t,'FF',false));
+    html+='<div class="text-xs text-gray-600 mt-1">+ Add:</div>';
+    if(e8Picks.length>2){html+=teamBtn(e8Picks[2],'FF',false);}else if(availTeams.length>0){html+=teamBtn(availTeams[0],'FF',false);}
+  }else{html+='<div class="text-xs text-gray-600">Pick E8</div>';}
   html+='</div></div>';
   html+='<div><div class="text-xs text-gray-500 mb-1">Semi 2</div><div class="bg-gray-800/30 rounded border border-gray-700 p-2 space-y-0.5 min-h-20">';
-  if(e8Picks.length>1){e8Picks.slice(2,4).forEach(t=>html+=teamBtn(t,'FF',false));html+='<div class="text-xs text-gray-600 mt-1">+ Add:</div>';availTeams.slice(0,2).forEach(t=>html+=teamBtn(t,'FF',false));}else{html+='<div class="text-xs text-gray-600">Pick E8</div>';}
+  if(e8Picks.length>1){
+    e8Picks.slice(2,4).forEach(t=>html+=teamBtn(t,'FF',false));
+    html+='<div class="text-xs text-gray-600 mt-1">+ Add:</div>';
+    if(availTeams.length>1){html+=teamBtn(availTeams[1],'FF',false);}else if(availTeams.length>0){html+=teamBtn(availTeams[0],'FF',false);}
+  }else{html+='<div class="text-xs text-gray-600">Pick E8</div>';}
   html+='</div></div></div></div>';
 
   // Champ
   html+='<div><div class="text-sm font-bold text-amber-400 mb-4">Championship</div><div class="space-y-1 w-44"><div class="bg-gray-800/30 rounded border border-gray-700 p-2 space-y-0.5 min-h-24">';
-  if(ffPicks.length>0){ffPicks.forEach(t=>html+=teamBtn(t,'CHAMP',false));html+='<div class="text-xs text-gray-600 mt-1">+ Add:</div>';availTeams.slice(0,3).forEach(t=>html+=teamBtn(t,'CHAMP',false));}else{html+='<div class="text-xs text-gray-600">Pick FF</div>';}
+  if(ffPicks.length>0){
+    ffPicks.forEach(t=>html+=teamBtn(t,'CHAMP',false));
+    html+='<div class="text-xs text-gray-600 mt-1">+ Add:</div>';
+    if(availTeams.length>0){html+=teamBtn(availTeams[0],'CHAMP',false);}
+  }else{html+='<div class="text-xs text-gray-600">Pick FF</div>';}
   html+='</div></div></div>';
 
   html+='</div></div>';
