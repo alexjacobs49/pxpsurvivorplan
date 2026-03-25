@@ -191,8 +191,8 @@ function renderBracket(entry){
   Object.values(groups).forEach(g=>{
     html+='<div><div class="text-xs font-semibold text-gray-400 mb-2">'+g.label+' (1 pick)</div>';
     g.regions.forEach(r=>{
-      const regionDayPicks=s16Day.filter(t=>TEAMS.find(x=>x.name===t&&x.region===r));
-      const regionSitPicks=s16Sit.filter(t=>TEAMS.find(x=>x.name===t&&x.region===r));
+      const regionDayPicks=e8Day.filter(t=>TEAMS.find(x=>x.name===t&&x.region===r));
+      const regionSitPicks=e8Sit.filter(t=>TEAMS.find(x=>x.name===t&&x.region===r));
       const regionAll=[...regionDayPicks,...regionSitPicks];
       html+='<div><div class="text-xs text-gray-500 mb-1">'+r+'</div><div class="bg-gray-800/30 rounded border border-gray-700 p-2 space-y-0.5 min-h-20">';
       if(regionAll.length>0){
