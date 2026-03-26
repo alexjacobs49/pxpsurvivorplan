@@ -238,18 +238,27 @@ function renderBracket(entry){
   const ffData=buildFFData(entry,e8Data);
   const champData=buildChampData(entry,ffData);
 
-  // Formal picks summary
-  let html='<div class="mb-3 flex flex-wrap items-center gap-3">';
-  html+='<span class="text-xs font-bold text-red-400 uppercase">Burned:</span><span class="text-xs text-red-300">'+burned.join(', ')+'</span>';
-  const formals=Object.entries(entry.formal);
-  if(formals.length){
-    html+='<span class="text-gray-600 mx-1">|</span><span class="text-xs font-bold text-yellow-400 uppercase">Formal:</span>';
-    formals.forEach(([key,team])=>{
-      const t=TEAMS.find(x=>x.name===team);
-      const rl=key.split('_')[0];
-      html+='<span class="px-1.5 py-0.5 bg-yellow-800/60 border border-yellow-600 rounded text-[10px] text-yellow-100">'+rl+': '+(t?t.seed+' ':'')+team+' ★</span>';
-    });
-  }
+  // Summary by region
+  const regions=['East','South','West','Midwest'];
+  let html='<div class="mb-4 grid gap-2" style="grid-template-columns:repeat(4,1fr)">';
+  regions.forEach(region=>{
+    const regionBurned=burned.filter(t=>TEAMS.find(x=>x.name===t&&x.region===region));
+    const regionFormals=Object.entries(entry.formal).filter(([,team])=>TEAMS.find(x=>x.name===team&&x.region===region)).map(([,t])=>t);
+    html+='<div class="bg-gray-800/30 border border-gray-700 rounded p-2">';
+    html+='<div class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-1">'+region+'</div>';
+    if(regionBurned.length){
+      html+='<div class="text-[10px] text-red-400 font-semibold">Burned:</div>';
+      regionBurned.forEach(t=>{html+='<div class="text-[10px] text-red-300">'+t+'</div>';});
+    }
+    if(regionFormals.length){
+      html+='<div class="text-[10px] text-yellow-400 font-semibold">'+(regionBurned.length?'Formal:':'Formal:')+'</div>';
+      regionFormals.forEach(t=>{
+        const tm=TEAMS.find(x=>x.name===t);
+        html+='<div class="text-[10px] text-yellow-200">★ '+(tm?tm.seed+' ':'')+t+'</div>';
+      });
+    }
+    html+='</div>';
+  });
   html+='</div>';
 
   // S16 games by region
