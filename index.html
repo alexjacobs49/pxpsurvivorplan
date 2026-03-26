@@ -240,7 +240,7 @@ function renderBracket(entry){
 
   // Summary by region
   const regions=['East','South','West','Midwest'];
-  let html='<div class="mb-4 grid gap-2" style="grid-template-columns:repeat(4,1fr)">';
+  let html='<div class="mb-4 grid gap-2 max-w-fit" style="grid-template-columns:repeat(4,1fr);width:1050px">';
   regions.forEach(region=>{
     const regionBurned=burned.filter(t=>TEAMS.find(x=>x.name===t&&x.region===region));
     const regionFormals=Object.entries(entry.formal).filter(([,team])=>TEAMS.find(x=>x.name===team&&x.region===region)).map(([,t])=>t);
