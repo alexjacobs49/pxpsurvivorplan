@@ -16,12 +16,43 @@ const TEAMS = [
   {name:'Michigan',seed:1,region:'Midwest'},{name:'Alabama',seed:4,region:'Midwest'},{name:'Iowa State',seed:2,region:'Midwest'},{name:'Tennessee',seed:6,region:'Midwest'},
 ];
 
-const S16_GAMES = [
-  {region:'South',teams:['Iowa','Nebraska'],id:'S1'},{region:'South',teams:['Illinois','Houston'],id:'S2'},
-  {region:'West',teams:['Arizona','Arkansas'],id:'W1'},{region:'West',teams:['Texas','Purdue'],id:'W2'},
-  {region:'East',teams:['Duke','St. John\'s'],id:'E1'},{region:'East',teams:['Michigan State','UConn'],id:'E2'},
-  {region:'Midwest',teams:['Michigan','Alabama'],id:'M1'},{region:'Midwest',teams:['Iowa State','Tennessee'],id:'M2'},
-];
+const ROUNDS = {
+  S16: {
+    label: 'Sweet 16',
+    games: [
+      {region:'South',teams:['Iowa','Nebraska'],id:'S1'},{region:'South',teams:['Illinois','Houston'],id:'S2'},
+      {region:'West',teams:['Arizona','Arkansas'],id:'W1'},{region:'West',teams:['Texas','Purdue'],id:'W2'},
+      {region:'East',teams:['Duke','St. John\'s'],id:'E1'},{region:'East',teams:['Michigan State','UConn'],id:'E2'},
+      {region:'Midwest',teams:['Michigan','Alabama'],id:'M1'},{region:'Midwest',teams:['Iowa State','Tennessee'],id:'M2'},
+    ],
+    days: [
+      {label:'Day 1 (Thu) — South & West',filter:g=>g.region==='South'||g.region==='West',formalGroup:1},
+      {label:'Day 2 (Fri) — East & Midwest',filter:g=>g.region==='East'||g.region==='Midwest',formalGroup:2},
+    ]
+  },
+  E8: {
+    label: 'Elite 8',
+    games: [], // populated dynamically from S16 scenario winners
+    days: [
+      {label:'Day 3 (Sat) — South & West',filter:g=>g.region==='South'||g.region==='West',formalGroup:1},
+      {label:'Day 4 (Sun) — East & Midwest',filter:g=>g.region==='East'||g.region==='Midwest',formalGroup:2},
+    ]
+  },
+  FF: {
+    label: 'Final Four',
+    games: [], // populated dynamically
+    days: [
+      {label:'Day 5 (Sat) — Final Four',filter:()=>true,formalGroup:0},
+    ]
+  },
+  CHAMP: {
+    label: 'Championship',
+    games: [], // populated dynamically
+    days: [
+      {label:'Day 6 (Mon) — Championship',filter:()=>true,formalGroup:0},
+    ]
+  }
+};
 
 const DEFAULT_ENTRIES = [
   {name:'Big1',burned:['Alabama','Illinois','UConn','Arkansas','Tennessee','Vanderbilt']},
@@ -30,22 +61,24 @@ const DEFAULT_ENTRIES = [
   {name:'Me',burned:['Vanderbilt','St. John\'s','Arkansas','UConn']},
 ];
 
-let state = {entries:[],activeEntryId:null,currentRound:'S16'};
+let state = {entries:[],activeEntryId:null};
 
 function load(){
   try{const s=localStorage.getItem('mm26survivor');if(s)Object.assign(state,JSON.parse(s));}catch(e){}
   if(!state.entries.length){
     DEFAULT_ENTRIES.forEach((def,idx)=>{
       state.entries.push({
-        id:'e'+idx,name:def.name,dayPicks:{},situational:{},burned:def.burned,
-        probs:{S16:{},E8:{},FF:{},CHAMP:{}},paths:{}
+        id:'e'+idx,name:def.name,burned:def.burned,
+        formal:{},   // {round: teamName} — one formal pick per day/group
+        scenario:{}   // {round: {gameId: teamName}} — scenario winner for each game
       });
     });
   }else{
     state.entries.forEach(e=>{
-      if(!e.dayPicks)e.dayPicks={};if(!e.situational)e.situational={};
-      if(!e.probs)e.probs={S16:{},E8:{},FF:{},CHAMP:{}};
-      if(!e.paths)e.paths={};
+      if(!e.formal)e.formal={};
+      if(!e.scenario)e.scenario={};
+      // migrate old state
+      delete e.dayPicks;delete e.situational;delete e.probs;delete e.paths;
     });
   }
   if(!state.activeEntryId&&state.entries.length)state.activeEntryId=state.entries[0].id;
@@ -53,220 +86,358 @@ function load(){
 
 function save(){localStorage.setItem('mm26survivor',JSON.stringify(state));}
 function activeEntry(){return state.entries.find(e=>e.id===state.activeEntryId);}
-function reset(){if(!confirm('Reset all?'))return;localStorage.removeItem('mm26survivor');state.entries=[];DEFAULT_ENTRIES.forEach((def,idx)=>{state.entries.push({id:'e'+idx,name:def.name,dayPicks:{},situational:{},burned:def.burned,probs:{S16:{},E8:{},FF:{},CHAMP:{}},paths:{}})});state.activeEntryId=state.entries[0].id;save();render();}
-
-function setProb(entryId,round,gameId,team,prob){
-  const e=state.entries.find(x=>x.id===entryId);if(!e)return;
-  if(!e.probs)e.probs={S16:{},E8:{},FF:{},CHAMP:{}};
-  if(!e.probs[round])e.probs[round]={};
-
-  if(round==='S16'){
-    if(!e.probs[round][gameId])e.probs[round][gameId]={};
-    e.probs[round][gameId][team]=parseFloat(prob)||0;
-  }else{
-    // For E8, FF, CHAMP, store by team name directly
-    e.probs[round][team]=parseFloat(prob)||0;
-  }
-  save();render();
-}
-
-function calculatePathProb(entry,pick,round){
-  // Calculate the full survival path probability starting with this pick in this round
-  // For S16, assumes picks in E8 and FF are optimally planned
-  if(round!=='S16')return 0;
-
-  const game=S16_GAMES.find(g=>g.teams.includes(pick));
-  if(!game)return 0;
-
-  let pathProb=(entry.probs.S16[game.id]?.[pick]||50)/100;
-
-  // For a complete path analysis, we'd need to:
-  // 1. Identify which teams would advance (winners of their S16 games)
-  // 2. Find best E8 picks from those teams
-  // 3. Calculate their win probabilities
-  // 4. Multiply all together
-  // For now, show the single-round probability with note about full path
-
-  return pathProb;
-}
-
-function findGameWithTeam(team,round){
-  const games=round==='S16'?S16_GAMES:[];
-  return games.find(g=>g.teams.includes(team));
-}
+function reset(){if(!confirm('Reset all?'))return;localStorage.removeItem('mm26survivor');state={entries:[],activeEntryId:null};load();save();render();}
 
 function getGroup(team){
   const t=TEAMS.find(x=>x.name===team);
   return(t.region==='South'||t.region==='West')?1:2;
 }
 
-function getGroupRegions(group){
-  return group===1?['South','West']:['East','Midwest'];
+function formalKey(round,formalGroup){return round+'_g'+formalGroup;}
+
+// Get all formal picks for an entry (returns array of team names)
+function allFormals(entry){
+  return Object.values(entry.formal);
 }
 
-function setPick(entryId,round,team,type){
+// Get all scenario picks for an entry (returns array of team names)
+function allScenarios(entry){
+  const result=[];
+  Object.values(entry.scenario).forEach(roundObj=>{
+    Object.values(roundObj).forEach(team=>{if(team)result.push(team);});
+  });
+  return result;
+}
+
+// Build E8 games from S16 scenario/formal picks
+function buildE8Games(entry){
+  const s16Games=ROUNDS.S16.games;
+  const s16Picks={...entry.scenario.S16||{}};
+  // Formal picks also count as winners for their game
+  Object.entries(entry.formal).forEach(([key,team])=>{
+    if(key.startsWith('S16')){
+      const game=s16Games.find(g=>g.teams.includes(team));
+      if(game)s16Picks[game.id]=team;
+    }
+  });
+
+  const e8Games=[];
+  // South: S1 winner vs S2 winner
+  const sw1=s16Picks['S1'],sw2=s16Picks['S2'];
+  if(sw1&&sw2)e8Games.push({region:'South',teams:[sw1,sw2],id:'E8_S'});
+  // West: W1 winner vs W2 winner
+  const ww1=s16Picks['W1'],ww2=s16Picks['W2'];
+  if(ww1&&ww2)e8Games.push({region:'West',teams:[ww1,ww2],id:'E8_W'});
+  // East: E1 winner vs E2 winner
+  const ew1=s16Picks['E1'],ew2=s16Picks['E2'];
+  if(ew1&&ew2)e8Games.push({region:'East',teams:[ew1,ew2],id:'E8_E'});
+  // Midwest: M1 winner vs M2 winner
+  const mw1=s16Picks['M1'],mw2=s16Picks['M2'];
+  if(mw1&&mw2)e8Games.push({region:'Midwest',teams:[mw1,mw2],id:'E8_M'});
+  return e8Games;
+}
+
+// Build FF games from E8 picks
+function buildFFGames(entry,e8Games){
+  const e8Picks={...entry.scenario.E8||{}};
+  Object.entries(entry.formal).forEach(([key,team])=>{
+    if(key.startsWith('E8')){
+      const game=e8Games.find(g=>g.teams.includes(team));
+      if(game)e8Picks[game.id]=team;
+    }
+  });
+
+  const ffGames=[];
+  const southWinner=e8Picks['E8_S'],westWinner=e8Picks['E8_W'];
+  const eastWinner=e8Picks['E8_E'],midwestWinner=e8Picks['E8_M'];
+  if(southWinner&&westWinner)ffGames.push({region:'South/West',teams:[southWinner,westWinner],id:'FF_1'});
+  if(eastWinner&&midwestWinner)ffGames.push({region:'East/Midwest',teams:[eastWinner,midwestWinner],id:'FF_2'});
+  return ffGames;
+}
+
+// Build Championship game from FF picks
+function buildChampGame(entry,ffGames){
+  const ffPicks={...entry.scenario.FF||{}};
+  Object.entries(entry.formal).forEach(([key,team])=>{
+    if(key.startsWith('FF')){
+      const game=ffGames.find(g=>g.teams.includes(team));
+      if(game)ffPicks[game.id]=team;
+    }
+  });
+
+  const w1=ffPicks['FF_1'],w2=ffPicks['FF_2'];
+  if(w1&&w2)return [{region:'Final',teams:[w1,w2],id:'CHAMP_1'}];
+  return [];
+}
+
+function setFormal(entryId,round,formalGroup,gameId,team){
   const e=state.entries.find(x=>x.id===entryId);if(!e)return;
-  if(!e.dayPicks)e.dayPicks={};if(!e.situational)e.situational={};
-  if(!e.dayPicks[round])e.dayPicks[round]=[];
-  if(!e.situational[round])e.situational[round]=[];
+  const key=formalKey(round,formalGroup);
+  const burned=e.burned||[];
 
-  const allRoundPicks=[...e.dayPicks[round],...e.situational[round]];
-  const idx=allRoundPicks.indexOf(team);
-
-  if(idx>=0){
-    if(e.dayPicks[round].includes(team)){
-      e.dayPicks[round]=e.dayPicks[round].filter(t=>t!==team);
-    }else{
-      e.situational[round]=e.situational[round].filter(t=>t!==team);
-    }
-  }else{
-    if(round==='S16'||round==='E8'){
-      const game=findGameWithTeam(team,round);
-      if(game){
-        const otherTeam=game.teams.find(t=>t!==team);
-        if(allRoundPicks.includes(otherTeam)){return;}
-      }
-    }
-
-    if(type==='day'){
-      if(round==='S16'||round==='E8'){
-        const group=getGroup(team);
-        const groupRegions=getGroupRegions(group);
-        const teamRegion=TEAMS.find(x=>x.name===team).region;
-        const otherRegions=groupRegions.filter(r=>r!==teamRegion);
-        otherRegions.forEach(r=>{
-          const teamsInRegion=(e.dayPicks[round]||[]).filter(t=>TEAMS.find(x=>x.name===t&&x.region===r));
-          teamsInRegion.forEach(t=>{
-            e.dayPicks[round]=e.dayPicks[round].filter(x=>x!==t);
-          });
-        });
-      }else if(round==='FF'||round==='CHAMP'){
-        e.dayPicks[round]=[];
-      }
-      e.dayPicks[round].push(team);
-    }else{
-      e.situational[round].push(team);
-    }
+  // Toggle off if already formal
+  if(e.formal[key]===team){
+    delete e.formal[key];
+    save();render();return;
   }
+
+  // Can't pick burned teams as formal
+  if(burned.includes(team)){return;}
+
+  // Can't pick a team already used as formal in another round
+  const otherFormals=Object.entries(e.formal).filter(([k])=>k!==key).map(([,v])=>v);
+  if(otherFormals.includes(team)){return;}
+
+  // Set formal pick (replaces any previous for this day/group)
+  // Also remove this team from scenario if it was there
+  if(!e.scenario[round])e.scenario[round]={};
+  if(e.scenario[round][gameId]===team)delete e.scenario[round][gameId];
+
+  e.formal[key]=team;
   save();render();
+}
+
+function setScenario(entryId,round,gameId,team){
+  const e=state.entries.find(x=>x.id===entryId);if(!e)return;
+  if(!e.scenario[round])e.scenario[round]={};
+
+  // Toggle off
+  if(e.scenario[round][gameId]===team){
+    delete e.scenario[round][gameId];
+    // Clear downstream picks that depended on this
+    clearDownstream(e,round,gameId);
+    save();render();return;
+  }
+
+  // Check if this team is the formal pick for this day — if so, don't allow as scenario
+  // (formal already implies they win)
+  // Actually, allow it — formal pick means they're the survivor pick, scenario just means who wins
+
+  // Set scenario pick (replaces previous for this game)
+  e.scenario[round][gameId]=team;
+  // Clear downstream picks that may no longer be valid
+  clearDownstream(e,round,gameId);
+  save();render();
+}
+
+function clearDownstream(entry,round,gameId){
+  if(round==='S16'){
+    // Clear E8 picks that involved the old winner, and cascade
+    const e8Games=buildE8Games(entry);
+    if(entry.scenario.E8){
+      Object.keys(entry.scenario.E8).forEach(e8Id=>{
+        const e8Game=e8Games.find(g=>g.id===e8Id);
+        if(e8Game){
+          const picked=entry.scenario.E8[e8Id];
+          if(picked&&!e8Game.teams.includes(picked)){
+            delete entry.scenario.E8[e8Id];
+          }
+        }else{
+          // E8 game no longer exists
+          delete entry.scenario.E8[e8Id];
+        }
+      });
+    }
+    // Also check formal E8 picks
+    Object.entries(entry.formal).forEach(([key,team])=>{
+      if(key.startsWith('E8')){
+        const e8Game=e8Games.find(g=>g.teams.includes(team));
+        if(!e8Game)delete entry.formal[key];
+      }
+    });
+    // Cascade further
+    clearDownstream(entry,'E8','');
+  }else if(round==='E8'){
+    const e8Games=buildE8Games(entry);
+    const ffGames=buildFFGames(entry,e8Games);
+    if(entry.scenario.FF){
+      Object.keys(entry.scenario.FF).forEach(ffId=>{
+        const ffGame=ffGames.find(g=>g.id===ffId);
+        if(ffGame){
+          const picked=entry.scenario.FF[ffId];
+          if(picked&&!ffGame.teams.includes(picked))delete entry.scenario.FF[ffId];
+        }else{delete entry.scenario.FF[ffId];}
+      });
+    }
+    Object.entries(entry.formal).forEach(([key,team])=>{
+      if(key.startsWith('FF')){
+        const ffGame=ffGames.find(g=>g.teams.includes(team));
+        if(!ffGame)delete entry.formal[key];
+      }
+    });
+    clearDownstream(entry,'FF','');
+  }else if(round==='FF'){
+    const e8Games=buildE8Games(entry);
+    const ffGames=buildFFGames(entry,e8Games);
+    const champGames=buildChampGame(entry,ffGames);
+    if(entry.scenario.CHAMP){
+      Object.keys(entry.scenario.CHAMP).forEach(cId=>{
+        const cGame=champGames.find(g=>g.id===cId);
+        if(cGame){
+          const picked=entry.scenario.CHAMP[cId];
+          if(picked&&!cGame.teams.includes(picked))delete entry.scenario.CHAMP[cId];
+        }else{delete entry.scenario.CHAMP[cId];}
+      });
+    }
+    Object.entries(entry.formal).forEach(([key,team])=>{
+      if(key.startsWith('CHAMP')){
+        const cGame=champGames.find(g=>g.teams.includes(team));
+        if(!cGame)delete entry.formal[key];
+      }
+    });
+  }
 }
 
 function render(){
   const entry=activeEntry();
-  let html='<div class="flex flex-col h-screen bg-gray-950"><header class="bg-gray-900 border-b border-gray-800 px-5 py-3"><h1 class="text-xl font-bold">🏀 Survivor Planner + Path Analyzer</h1><p class="text-xs text-gray-500">Input win % for all games. System shows full survival path probability.</p></header>';
+  let html='<div class="flex flex-col h-screen bg-gray-950">';
+
+  // Header
+  html+='<header class="bg-gray-900 border-b border-gray-800 px-5 py-3 flex items-center justify-between"><div><h1 class="text-xl font-bold">🏀 Survivor Planner</h1><p class="text-xs text-gray-500">Formal Pick = your survivor pick. Scenario Picks = who you think wins each game.</p></div><button onclick="reset()" class="text-xs text-red-400 hover:text-red-300 px-3 py-1 border border-red-800 rounded">Reset</button></header>';
+
+  // Entry tabs
   html+='<div class="bg-gray-900 border-b border-gray-800 px-5 flex gap-0 overflow-x-auto">';
-  state.entries.forEach(e=>{html+='<button onclick="switchEntry(\''+e.id+'\')" class="px-4 py-2 text-sm border-b-2 '+(e.id===state.activeEntryId?'border-orange-500 text-white':'border-transparent text-gray-500')+'">●'+e.name+'</button>';});
-  html+='</div><div class="flex-1 overflow-auto bg-gray-950 pb-96">';
-  if(entry){html+=renderBracket(entry);}else{html+='<div class="text-center text-gray-500 mt-20">No entry</div>';}
+  state.entries.forEach(e=>{
+    const active=e.id===state.activeEntryId;
+    html+='<button onclick="switchEntry(\''+e.id+'\')" class="px-4 py-2 text-sm border-b-2 '+(active?'border-orange-500 text-white':'border-transparent text-gray-500 hover:text-gray-300')+'">'+e.name+'</button>';
+  });
+  html+='</div>';
+
+  // Main content
+  html+='<div class="flex-1 overflow-auto bg-gray-950 p-6">';
+  if(entry){
+    html+=renderEntry(entry);
+  }else{
+    html+='<div class="text-center text-gray-500 mt-20">No entry selected</div>';
+  }
   html+='</div></div>';
+
   document.getElementById('app').innerHTML=html;
 }
 
-function renderBracket(entry){
+function renderEntry(entry){
   const burned=entry.burned||[];
-  if(!entry.dayPicks)entry.dayPicks={};if(!entry.situational)entry.situational={};
-  const s16Day=entry.dayPicks.S16||[];
-  const s16Sit=entry.situational.S16||[];
-  const s16All=[...s16Day,...s16Sit];
+  const e8Games=buildE8Games(entry);
+  const ffGames=buildFFGames(entry,e8Games);
+  const champGames=buildChampGame(entry,ffGames);
 
-  const e8Day=entry.dayPicks.E8||[];
-  const e8Sit=entry.situational.E8||[];
-  const e8All=[...e8Day,...e8Sit];
+  let html='';
 
-  const ffDay=entry.dayPicks.FF||[];
-  const ffSit=entry.situational.FF||[];
-  const ffAll=[...ffDay,...ffSit];
+  // Burned teams
+  html+='<div class="mb-6"><span class="text-xs font-bold text-red-400 uppercase tracking-wide">Burned: </span><span class="text-xs text-red-300">'+burned.join(', ')+'</span></div>';
 
-  const champDay=entry.dayPicks.CHAMP||[];
-  const champSit=entry.situational.CHAMP||[];
-  const champAll=[...champDay,...champSit];
-
-  const allPicks=new Set([...s16All,...e8All,...ffAll,...champAll]);
-  const availTeams=TEAMS.filter(t=>!burned.includes(t.name)&&!allPicks.has(t.name)).map(t=>t.name);
-
-  function probInput(gameId,team){
-    const prob=entry.probs.S16[gameId]?.[team]||50;
-    return '<input type="number" min="0" max="100" value="'+prob+'" onchange="setProb(\''+entry.id+'\',\'S16\',\''+gameId+'\',\''+team+'\',this.value)" class="w-12 h-6 text-xs text-center bg-gray-700 text-gray-200 border border-gray-600 rounded" />';
-  }
-
-  function teamBtn(team,round,isPrimary){
-    const t=TEAMS.find(x=>x.name===team);
-    const isDayPick=(entry.dayPicks[round]||[]).includes(team);
-    const isSituational=(entry.situational[round]||[]).includes(team);
-    let cls='bg-gray-800 border border-gray-700 text-white hover:bg-gray-700 cursor-pointer';
-    if(isDayPick){
-      cls='bg-yellow-900/60 border-2 border-yellow-600 text-yellow-100';
-    }else if(isSituational){
-      cls='bg-gray-600/60 border-2 border-gray-500 text-gray-200';
-    }
-    const label=isPrimary?'day':'situational';
-    const star=isDayPick?' ★':'';
-    return '<button onclick="setPick(\''+entry.id+'\',\''+round+'\',\''+team+'\',\''+label+'\')" class="w-full text-left px-2 py-1.5 rounded text-xs '+cls+'"><span class="font-bold">'+t.seed+'</span> '+team+star+' </button>';
-  }
-
-  let html='<div class="p-6"><h2 class="text-lg font-bold mb-6">Bracket Analysis</h2><div class="overflow-x-auto"><div class="inline-flex gap-8 min-w-max">';
-
-  // S16 - Show all games with probability inputs
-  html+='<div><div class="text-sm font-bold text-blue-400 mb-4">Sweet 16 (Input Win %)</div><div class="space-y-3 w-56">';
-  S16_GAMES.forEach(game=>{
-    const t0=game.teams[0],t1=game.teams[1];
-    html+='<div class="bg-gray-800/30 border border-gray-700 rounded p-2"><div class="text-xs text-gray-400 mb-1">'+game.region+'</div>';
-    html+='<div class="flex gap-1 mb-1"><button onclick="setPick(\''+entry.id+'\',\'S16\',\''+t0+'\',\'day\')" class="flex-1 px-1 py-1 bg-gray-700 text-xs rounded hover:bg-gray-600">'+t0+'</button>'+probInput(game.id,t0)+'</div>';
-    html+='<div class="flex gap-1"><button onclick="setPick(\''+entry.id+'\',\'S16\',\''+t1+'\',\'day\')" class="flex-1 px-1 py-1 bg-gray-700 text-xs rounded hover:bg-gray-600">'+t1+'</button>'+probInput(game.id,t1)+'</div>';
-    html+='</div>';
-  });
-  html+='</div></div>';
-
-  // Show detailed path analysis for S16 picks
-  if(s16Day.length>0){
-    html+='<div><div class="text-sm font-bold text-green-400 mb-4">Survival Path Analysis</div><div class="space-y-3 w-72">';
-    s16Day.forEach(pick=>{
-      const game=S16_GAMES.find(g=>g.teams.includes(pick));
-      const pickProb=(entry.probs.S16[game.id]?.[pick]||50)/100;
-
-      // Build path with E8 and FF picks
-      const e8Pick=e8Day.find(t=>TEAMS.find(x=>x.name===t&&x.region===TEAMS.find(y=>y.name===pick).region));
-      const e8Prob=e8Pick?(entry.probs.E8?.[e8Pick]||50)/100:1;
-      const ffPick=ffDay[0];
-      const ffProb=ffPick?((entry.probs.FF?.[ffPick]||50)/100):1;
-
-      const fullPathProb=pickProb*e8Prob*ffProb;
-
-      html+='<div class="bg-green-900/30 border border-green-600 rounded p-3"><div class="text-sm font-bold text-green-300">'+pick+'</div>';
-      html+='<div class="text-xs text-gray-300 mt-1">Round 1: '+Math.round(pickProb*100)+'%';
-      if(e8Pick)html+=' × '+Math.round(e8Prob*100)+'% ('+e8Pick+')';
-      if(ffPick)html+=' × '+Math.round(ffProb*100)+'% ('+ffPick+')';
-      html+='</div>';
-      html+='<div class="text-sm font-bold text-green-200 mt-2">Full Path: '+Math.round(fullPathProb*100)+'%</div>';
-      html+='</div>';
+  // Formal picks summary
+  const formals=Object.entries(entry.formal);
+  if(formals.length){
+    html+='<div class="mb-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3"><div class="text-xs font-bold text-yellow-400 uppercase tracking-wide mb-2">Your Formal Picks</div><div class="flex flex-wrap gap-2">';
+    formals.forEach(([key,team])=>{
+      const t=TEAMS.find(x=>x.name===team);
+      const roundLabel=key.split('_')[0];
+      html+='<span class="px-2 py-1 bg-yellow-800/60 border border-yellow-600 rounded text-xs text-yellow-100"><span class="text-yellow-400">'+roundLabel+':</span> <span class="font-bold">'+(t?t.seed+' ':'')+team+'</span> ★</span>';
     });
     html+='</div></div>';
   }
 
-  // Show other round inputs
-  html+='<div><div class="text-sm font-bold text-purple-400 mb-4">E8 (Optional)</div><div class="space-y-2 w-44">';
-  e8Day.forEach(pick=>{
-    html+='<div class="flex items-center gap-1 text-xs"><span class="flex-1">'+pick+':</span><input type="number" min="0" max="100" value="'+(entry.probs.E8?.[pick]||50)+'" onchange="setProb(\''+entry.id+'\',\'E8\',\''+pick+'\',\''+pick+'\',this.value)" class="w-12 h-6 text-center bg-gray-700 text-gray-200 border border-gray-600 rounded" />%</div>';
-  });
-  html+='</div></div>';
+  // S16 Day 1: South & West
+  html+=renderDay(entry,'S16',ROUNDS.S16.days[0],ROUNDS.S16.games);
+  // S16 Day 2: East & Midwest
+  html+=renderDay(entry,'S16',ROUNDS.S16.days[1],ROUNDS.S16.games);
 
-  html+='<div><div class="text-sm font-bold text-purple-400 mb-4">FF (Optional)</div><div class="space-y-2 w-44">';
-  ffDay.forEach(pick=>{
-    html+='<div class="flex items-center gap-1 text-xs"><span class="flex-1">'+pick+':</span><input type="number" min="0" max="100" value="'+(entry.probs.FF?.[pick]||50)+'" onchange="setProb(\''+entry.id+'\',\'FF\',\''+pick+'\',\''+pick+'\',this.value)" class="w-12 h-6 text-center bg-gray-700 text-gray-200 border border-gray-600 rounded" />%</div>';
-  });
-  html+='</div></div>';
+  // E8
+  if(e8Games.length){
+    html+=renderDay(entry,'E8',ROUNDS.E8.days[0],e8Games);
+    html+=renderDay(entry,'E8',ROUNDS.E8.days[1],e8Games);
+  }
 
-  html+='</div></div>';
+  // FF
+  if(ffGames.length){
+    html+=renderDay(entry,'FF',ROUNDS.FF.days[0],ffGames);
+  }
 
-  // Bottom: Show probability summary
-  html+='<div class="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4"><h3 class="text-sm font-bold mb-2">💡 How It Works</h3><p class="text-xs text-gray-400">1. Input win % for each game above. 2. Pick your team. 3. System calculates: <span class="text-green-300">Pick Win % × Future Picks\' Win %</span> = Your full survival path probability.</p></div>';
+  // Championship
+  if(champGames.length){
+    html+=renderDay(entry,'CHAMP',ROUNDS.CHAMP.days[0],champGames);
+  }
 
   return html;
 }
 
+function renderDay(entry,round,day,allGames){
+  const games=allGames.filter(day.filter);
+  if(!games.length)return '';
+
+  const burned=entry.burned||[];
+  const fKey=formalKey(round,day.formalGroup);
+  const formalPick=entry.formal[fKey]||null;
+  const otherFormals=Object.entries(entry.formal).filter(([k])=>k!==fKey).map(([,v])=>v);
+
+  let html='<div class="mb-8"><div class="text-sm font-bold text-blue-400 uppercase tracking-wide mb-3">'+day.label+'</div>';
+  html+='<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">';
+
+  games.forEach(game=>{
+    const scenarioPick=(entry.scenario[round]||{})[game.id]||null;
+    const isFormalGame=formalPick&&game.teams.includes(formalPick);
+
+    html+='<div class="rounded-lg border p-3 '+(isFormalGame?'bg-yellow-900/30 border-yellow-600/60':'bg-gray-800/40 border-gray-700')+'">';
+    html+='<div class="text-xs text-gray-400 mb-2">'+game.region+'</div>';
+
+    game.teams.forEach(team=>{
+      const t=TEAMS.find(x=>x.name===team);
+      const seed=t?t.seed:'?';
+      const isBurned=burned.includes(team);
+      const isFormal=formalPick===team;
+      const isScenario=scenarioPick===team;
+      const isOtherFormal=otherFormals.includes(team);
+
+      // Scenario button
+      let scenCls='';
+      if(isScenario&&!isFormal){
+        scenCls='bg-gray-600 border-gray-400 text-white';
+      }else if(isFormal){
+        scenCls='bg-yellow-800/40 border-yellow-600/40 text-yellow-200 opacity-50';
+      }else{
+        scenCls='bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700';
+      }
+
+      // Formal button
+      let formalCls='';
+      let formalDisabled=false;
+      if(isFormal){
+        formalCls='bg-yellow-700 border-yellow-500 text-yellow-100';
+      }else if(isBurned||isOtherFormal){
+        formalCls='bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed';
+        formalDisabled=true;
+      }else{
+        formalCls='bg-gray-800 border-gray-700 text-gray-400 hover:bg-yellow-900/30 hover:border-yellow-700';
+      }
+
+      html+='<div class="flex items-center gap-1.5 mb-1.5">';
+
+      // Winner pick button (scenario)
+      html+='<button onclick="pickScenario(\''+entry.id+'\',\''+round+'\',\''+game.id+'\',\''+team.replace(/'/g,"\\'")+'\')" class="flex-1 text-left px-2 py-1.5 rounded text-xs border '+scenCls+'">';
+      html+='<span class="font-bold">'+seed+'</span> '+team;
+      if(isScenario&&!isFormal)html+=' ✓';
+      if(isBurned)html+=' <span class="text-red-400 text-[10px]">BURNED</span>';
+      html+='</button>';
+
+      // Formal pick button (star)
+      html+='<button onclick="pickFormal(\''+entry.id+'\',\''+round+'\','+day.formalGroup+',\''+game.id+'\',\''+team.replace(/'/g,"\\'")+'\')" '+(formalDisabled?'disabled ':'')+' class="w-8 h-8 flex items-center justify-center rounded border text-sm '+formalCls+'" title="'+(formalDisabled?(isBurned?'Burned':'Already used as formal'):'Set as formal pick')+'">';
+      html+=isFormal?'★':'☆';
+      html+='</button>';
+
+      html+='</div>';
+    });
+
+    html+='</div>';
+  });
+
+  html+='</div></div>';
+  return html;
+}
+
 window.switchEntry=id=>{state.activeEntryId=id;render();};
-window.setPick=setPick;
-window.setProb=setProb;
+window.pickFormal=(eid,round,fg,gid,team)=>setFormal(eid,round,fg,gid,team);
+window.pickScenario=(eid,round,gid,team)=>setScenario(eid,round,gid,team);
 window.reset=reset;
 
 load();
