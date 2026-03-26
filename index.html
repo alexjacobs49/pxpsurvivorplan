@@ -118,8 +118,8 @@ function buildFFData(entry,e8Data){
   const e8Games=e8Data.filter(g=>g.teams[0]&&g.teams[1]);
   const w=getRoundWinners(entry,'E8',e8Games);
   return [
-    {id:'FF_1',region:'South/West',teams:[w['E8_S']||null,w['E8_W']||null]},
-    {id:'FF_2',region:'East/Midwest',teams:[w['E8_E']||null,w['E8_M']||null]},
+    {id:'FF_1',region:'East/Midwest',teams:[w['E8_E']||null,w['E8_M']||null]},
+    {id:'FF_2',region:'South/West',teams:[w['E8_S']||null,w['E8_W']||null]},
   ];
 }
 
@@ -295,10 +295,10 @@ function renderBracket(entry){
   html+='<div class="bracket-col center">';
   html+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:100%">';
 
-  // FF_2: East/Midwest (top of center — connects to East on left)
+  // FF_1: East/Midwest (top of center — connects to East on left)
   html+='<div>';
   html+='<div class="text-[10px] font-bold text-green-400 uppercase tracking-wide mb-1 text-center">Final Four</div>';
-  html+=renderGameCard(entry,'FF',ff2,burned);
+  html+=renderGameCard(entry,'FF',ff1,burned);
   html+='</div>';
 
   // Championship
@@ -307,10 +307,10 @@ function renderBracket(entry){
   html+=renderGameCard(entry,'CHAMP',champ,burned);
   html+='</div>';
 
-  // FF_1: South/West (bottom of center — connects to South on left)
+  // FF_2: South/West (bottom of center — connects to South on left)
   html+='<div>';
   html+='<div class="text-[10px] font-bold text-green-400 uppercase tracking-wide mb-1 text-center">Final Four</div>';
-  html+=renderGameCard(entry,'FF',ff1,burned);
+  html+=renderGameCard(entry,'FF',ff2,burned);
   html+='</div>';
 
   html+='</div></div>';
