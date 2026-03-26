@@ -5,6 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>March Madness Survivor Planner</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .bracket{display:flex;align-items:stretch;gap:12px;min-width:1050px;min-height:520px}
+    .bracket-col{display:flex;flex-direction:column;justify-content:space-around;gap:8px}
+    .bracket-col.s16{width:185px}
+    .bracket-col.e8{width:165px}
+    .bracket-col.center{width:180px;justify-content:center}
+    .region-half{display:flex;flex-direction:column;gap:8px}
+    .region-spacer{height:24px}
+    .game-card{border-radius:8px;padding:8px;border:1px solid #374151;background:rgba(31,41,55,0.4)}
+    .game-card.formal-game{border-color:rgba(202,138,4,0.6);background:rgba(113,63,18,0.3)}
+    .game-card.placeholder{opacity:0.5;border-style:dashed}
+    .game-card .region-label{font-size:10px;color:#9ca3af;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em}
+    .game-card .round-label{font-size:9px;color:#6b7280;margin-bottom:2px}
+    .team-row{display:flex;align-items:center;gap:4px;margin-bottom:4px}
+    .team-row:last-child{margin-bottom:0}
+    .team-btn{flex:1;text-align:left;padding:4px 8px;border-radius:4px;font-size:11px;border:1px solid #374151;background:#1f2937;color:#d1d5db;cursor:pointer;transition:background 0.15s}
+    .team-btn:hover{background:#374151}
+    .team-btn.picked{background:#4b5563;border-color:#9ca3af;color:#fff}
+    .team-btn.formal-picked{background:rgba(113,63,18,0.4);border-color:rgba(202,138,4,0.4);color:#fef3c7;opacity:0.6}
+    .team-btn .seed{font-weight:700}
+    .team-btn .burned-tag{font-size:9px;color:#f87171}
+    .star-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:4px;border:1px solid #374151;font-size:13px;cursor:pointer;background:#1f2937;color:#6b7280;transition:all 0.15s}
+    .star-btn:hover:not(:disabled){background:rgba(113,63,18,0.3);border-color:rgba(161,98,7,0.7)}
+    .star-btn.active{background:#a16207;border-color:#ca8a04;color:#fef9c3}
+    .star-btn:disabled{cursor:not-allowed;opacity:0.3}
+    .tbd-slot{flex:1;padding:4px 8px;border-radius:4px;font-size:11px;border:1px dashed #374151;color:#4b5563;text-align:center}
+    .connector{position:relative}
+    .connector::after{content:'';position:absolute;top:50%;width:12px;height:1px;background:#374151}
+    .connector-r::after{right:-12px}
+    .connector-l::after{left:-12px}
+  </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
 <div id="app"></div>
@@ -16,43 +47,12 @@ const TEAMS = [
   {name:'Michigan',seed:1,region:'Midwest'},{name:'Alabama',seed:4,region:'Midwest'},{name:'Iowa State',seed:2,region:'Midwest'},{name:'Tennessee',seed:6,region:'Midwest'},
 ];
 
-const ROUNDS = {
-  S16: {
-    label: 'Sweet 16',
-    games: [
-      {region:'South',teams:['Iowa','Nebraska'],id:'S1'},{region:'South',teams:['Illinois','Houston'],id:'S2'},
-      {region:'West',teams:['Arizona','Arkansas'],id:'W1'},{region:'West',teams:['Texas','Purdue'],id:'W2'},
-      {region:'East',teams:['Duke','St. John\'s'],id:'E1'},{region:'East',teams:['Michigan State','UConn'],id:'E2'},
-      {region:'Midwest',teams:['Michigan','Alabama'],id:'M1'},{region:'Midwest',teams:['Iowa State','Tennessee'],id:'M2'},
-    ],
-    days: [
-      {label:'Day 1 (Thu) — South & West',filter:g=>g.region==='South'||g.region==='West',formalGroup:1},
-      {label:'Day 2 (Fri) — East & Midwest',filter:g=>g.region==='East'||g.region==='Midwest',formalGroup:2},
-    ]
-  },
-  E8: {
-    label: 'Elite 8',
-    games: [], // populated dynamically from S16 scenario winners
-    days: [
-      {label:'Day 3 (Sat) — South & West',filter:g=>g.region==='South'||g.region==='West',formalGroup:1},
-      {label:'Day 4 (Sun) — East & Midwest',filter:g=>g.region==='East'||g.region==='Midwest',formalGroup:2},
-    ]
-  },
-  FF: {
-    label: 'Final Four',
-    games: [], // populated dynamically
-    days: [
-      {label:'Day 5 (Sat) — Final Four',filter:()=>true,formalGroup:0},
-    ]
-  },
-  CHAMP: {
-    label: 'Championship',
-    games: [], // populated dynamically
-    days: [
-      {label:'Day 6 (Mon) — Championship',filter:()=>true,formalGroup:0},
-    ]
-  }
-};
+const S16_GAMES = [
+  {region:'South',teams:['Iowa','Nebraska'],id:'S1'},{region:'South',teams:['Illinois','Houston'],id:'S2'},
+  {region:'West',teams:['Arizona','Arkansas'],id:'W1'},{region:'West',teams:['Texas','Purdue'],id:'W2'},
+  {region:'East',teams:['Duke','St. John\'s'],id:'E1'},{region:'East',teams:['Michigan State','UConn'],id:'E2'},
+  {region:'Midwest',teams:['Michigan','Alabama'],id:'M1'},{region:'Midwest',teams:['Iowa State','Tennessee'],id:'M2'},
+];
 
 const DEFAULT_ENTRIES = [
   {name:'Big1',burned:['Alabama','Illinois','UConn','Arkansas','Tennessee','Vanderbilt']},
@@ -67,17 +67,11 @@ function load(){
   try{const s=localStorage.getItem('mm26survivor');if(s)Object.assign(state,JSON.parse(s));}catch(e){}
   if(!state.entries.length){
     DEFAULT_ENTRIES.forEach((def,idx)=>{
-      state.entries.push({
-        id:'e'+idx,name:def.name,burned:def.burned,
-        formal:{},   // {round: teamName} — one formal pick per day/group
-        scenario:{}   // {round: {gameId: teamName}} — scenario winner for each game
-      });
+      state.entries.push({id:'e'+idx,name:def.name,burned:def.burned,formal:{},scenario:{}});
     });
   }else{
     state.entries.forEach(e=>{
-      if(!e.formal)e.formal={};
-      if(!e.scenario)e.scenario={};
-      // migrate old state
+      if(!e.formal)e.formal={};if(!e.scenario)e.scenario={};
       delete e.dayPicks;delete e.situational;delete e.probs;delete e.paths;
     });
   }
@@ -88,86 +82,51 @@ function save(){localStorage.setItem('mm26survivor',JSON.stringify(state));}
 function activeEntry(){return state.entries.find(e=>e.id===state.activeEntryId);}
 function reset(){if(!confirm('Reset all?'))return;localStorage.removeItem('mm26survivor');state={entries:[],activeEntryId:null};load();save();render();}
 
-function getGroup(team){
-  const t=TEAMS.find(x=>x.name===team);
-  return(t.region==='South'||t.region==='West')?1:2;
-}
-
 function formalKey(round,formalGroup){return round+'_g'+formalGroup;}
 
-// Get all formal picks for an entry (returns array of team names)
-function allFormals(entry){
-  return Object.values(entry.formal);
+function getFormalGroup(round,game){
+  if(round==='FF'||round==='CHAMP')return 0;
+  if(game.region==='South'||game.region==='West')return 1;
+  return 2;
 }
 
-// Get all scenario picks for an entry (returns array of team names)
-function allScenarios(entry){
-  const result=[];
-  Object.values(entry.scenario).forEach(roundObj=>{
-    Object.values(roundObj).forEach(team=>{if(team)result.push(team);});
-  });
-  return result;
-}
-
-// Build E8 games from S16 scenario/formal picks
-function buildE8Games(entry){
-  const s16Games=ROUNDS.S16.games;
-  const s16Picks={...entry.scenario.S16||{}};
-  // Formal picks also count as winners for their game
+// Get all winners for a round (scenario + formal picks counted as winners)
+function getRoundWinners(entry,round,games){
+  const picks={...entry.scenario[round]||{}};
   Object.entries(entry.formal).forEach(([key,team])=>{
-    if(key.startsWith('S16')){
-      const game=s16Games.find(g=>g.teams.includes(team));
-      if(game)s16Picks[game.id]=team;
+    if(key.startsWith(round)){
+      const game=games.find(g=>g.teams.includes(team));
+      if(game)picks[game.id]=team;
     }
   });
-
-  const e8Games=[];
-  // South: S1 winner vs S2 winner
-  const sw1=s16Picks['S1'],sw2=s16Picks['S2'];
-  if(sw1&&sw2)e8Games.push({region:'South',teams:[sw1,sw2],id:'E8_S'});
-  // West: W1 winner vs W2 winner
-  const ww1=s16Picks['W1'],ww2=s16Picks['W2'];
-  if(ww1&&ww2)e8Games.push({region:'West',teams:[ww1,ww2],id:'E8_W'});
-  // East: E1 winner vs E2 winner
-  const ew1=s16Picks['E1'],ew2=s16Picks['E2'];
-  if(ew1&&ew2)e8Games.push({region:'East',teams:[ew1,ew2],id:'E8_E'});
-  // Midwest: M1 winner vs M2 winner
-  const mw1=s16Picks['M1'],mw2=s16Picks['M2'];
-  if(mw1&&mw2)e8Games.push({region:'Midwest',teams:[mw1,mw2],id:'E8_M'});
-  return e8Games;
+  return picks;
 }
 
-// Build FF games from E8 picks
-function buildFFGames(entry,e8Games){
-  const e8Picks={...entry.scenario.E8||{}};
-  Object.entries(entry.formal).forEach(([key,team])=>{
-    if(key.startsWith('E8')){
-      const game=e8Games.find(g=>g.teams.includes(team));
-      if(game)e8Picks[game.id]=team;
-    }
-  });
+function getS16Winners(entry){return getRoundWinners(entry,'S16',S16_GAMES);}
 
-  const ffGames=[];
-  const southWinner=e8Picks['E8_S'],westWinner=e8Picks['E8_W'];
-  const eastWinner=e8Picks['E8_E'],midwestWinner=e8Picks['E8_M'];
-  if(southWinner&&westWinner)ffGames.push({region:'South/West',teams:[southWinner,westWinner],id:'FF_1'});
-  if(eastWinner&&midwestWinner)ffGames.push({region:'East/Midwest',teams:[eastWinner,midwestWinner],id:'FF_2'});
-  return ffGames;
+function buildE8Data(entry){
+  const w=getS16Winners(entry);
+  return [
+    {id:'E8_E',region:'East',teams:[w['E1']||null,w['E2']||null]},
+    {id:'E8_S',region:'South',teams:[w['S1']||null,w['S2']||null]},
+    {id:'E8_W',region:'West',teams:[w['W1']||null,w['W2']||null]},
+    {id:'E8_M',region:'Midwest',teams:[w['M1']||null,w['M2']||null]},
+  ];
 }
 
-// Build Championship game from FF picks
-function buildChampGame(entry,ffGames){
-  const ffPicks={...entry.scenario.FF||{}};
-  Object.entries(entry.formal).forEach(([key,team])=>{
-    if(key.startsWith('FF')){
-      const game=ffGames.find(g=>g.teams.includes(team));
-      if(game)ffPicks[game.id]=team;
-    }
-  });
+function buildFFData(entry,e8Data){
+  const e8Games=e8Data.filter(g=>g.teams[0]&&g.teams[1]);
+  const w=getRoundWinners(entry,'E8',e8Games);
+  return [
+    {id:'FF_1',region:'South/West',teams:[w['E8_S']||null,w['E8_W']||null]},
+    {id:'FF_2',region:'East/Midwest',teams:[w['E8_E']||null,w['E8_M']||null]},
+  ];
+}
 
-  const w1=ffPicks['FF_1'],w2=ffPicks['FF_2'];
-  if(w1&&w2)return [{region:'Final',teams:[w1,w2],id:'CHAMP_1'}];
-  return [];
+function buildChampData(entry,ffData){
+  const ffGames=ffData.filter(g=>g.teams[0]&&g.teams[1]);
+  const w=getRoundWinners(entry,'FF',ffGames);
+  return [{id:'CHAMP_1',region:'Championship',teams:[w['FF_1']||null,w['FF_2']||null]}];
 }
 
 function setFormal(entryId,round,formalGroup,gameId,team){
@@ -175,21 +134,11 @@ function setFormal(entryId,round,formalGroup,gameId,team){
   const key=formalKey(round,formalGroup);
   const burned=e.burned||[];
 
-  // Toggle off if already formal
-  if(e.formal[key]===team){
-    delete e.formal[key];
-    save();render();return;
-  }
-
-  // Can't pick burned teams as formal
-  if(burned.includes(team)){return;}
-
-  // Can't pick a team already used as formal in another round
+  if(e.formal[key]===team){delete e.formal[key];save();render();return;}
+  if(burned.includes(team))return;
   const otherFormals=Object.entries(e.formal).filter(([k])=>k!==key).map(([,v])=>v);
-  if(otherFormals.includes(team)){return;}
+  if(otherFormals.includes(team))return;
 
-  // Set formal pick (replaces any previous for this day/group)
-  // Also remove this team from scenario if it was there
   if(!e.scenario[round])e.scenario[round]={};
   if(e.scenario[round][gameId]===team)delete e.scenario[round][gameId];
 
@@ -201,101 +150,73 @@ function setScenario(entryId,round,gameId,team){
   const e=state.entries.find(x=>x.id===entryId);if(!e)return;
   if(!e.scenario[round])e.scenario[round]={};
 
-  // Toggle off
   if(e.scenario[round][gameId]===team){
     delete e.scenario[round][gameId];
-    // Clear downstream picks that depended on this
     clearDownstream(e,round,gameId);
     save();render();return;
   }
 
-  // Check if this team is the formal pick for this day — if so, don't allow as scenario
-  // (formal already implies they win)
-  // Actually, allow it — formal pick means they're the survivor pick, scenario just means who wins
-
-  // Set scenario pick (replaces previous for this game)
   e.scenario[round][gameId]=team;
-  // Clear downstream picks that may no longer be valid
   clearDownstream(e,round,gameId);
   save();render();
 }
 
-function clearDownstream(entry,round,gameId){
+function clearDownstream(entry,round){
   if(round==='S16'){
-    // Clear E8 picks that involved the old winner, and cascade
-    const e8Games=buildE8Games(entry);
+    const e8Data=buildE8Data(entry);
+    const activeE8=e8Data.filter(g=>g.teams[0]&&g.teams[1]);
     if(entry.scenario.E8){
       Object.keys(entry.scenario.E8).forEach(e8Id=>{
-        const e8Game=e8Games.find(g=>g.id===e8Id);
-        if(e8Game){
-          const picked=entry.scenario.E8[e8Id];
-          if(picked&&!e8Game.teams.includes(picked)){
-            delete entry.scenario.E8[e8Id];
-          }
-        }else{
-          // E8 game no longer exists
-          delete entry.scenario.E8[e8Id];
-        }
+        const g=activeE8.find(x=>x.id===e8Id);
+        if(g){if(entry.scenario.E8[e8Id]&&!g.teams.includes(entry.scenario.E8[e8Id]))delete entry.scenario.E8[e8Id];}
+        else delete entry.scenario.E8[e8Id];
       });
     }
-    // Also check formal E8 picks
     Object.entries(entry.formal).forEach(([key,team])=>{
-      if(key.startsWith('E8')){
-        const e8Game=e8Games.find(g=>g.teams.includes(team));
-        if(!e8Game)delete entry.formal[key];
-      }
+      if(key.startsWith('E8')){const g=activeE8.find(x=>x.teams.includes(team));if(!g)delete entry.formal[key];}
     });
-    // Cascade further
-    clearDownstream(entry,'E8','');
+    clearDownstream(entry,'E8');
   }else if(round==='E8'){
-    const e8Games=buildE8Games(entry);
-    const ffGames=buildFFGames(entry,e8Games);
+    const e8Data=buildE8Data(entry);
+    const ffData=buildFFData(entry,e8Data);
+    const activeFF=ffData.filter(g=>g.teams[0]&&g.teams[1]);
     if(entry.scenario.FF){
-      Object.keys(entry.scenario.FF).forEach(ffId=>{
-        const ffGame=ffGames.find(g=>g.id===ffId);
-        if(ffGame){
-          const picked=entry.scenario.FF[ffId];
-          if(picked&&!ffGame.teams.includes(picked))delete entry.scenario.FF[ffId];
-        }else{delete entry.scenario.FF[ffId];}
+      Object.keys(entry.scenario.FF).forEach(fId=>{
+        const g=activeFF.find(x=>x.id===fId);
+        if(g){if(entry.scenario.FF[fId]&&!g.teams.includes(entry.scenario.FF[fId]))delete entry.scenario.FF[fId];}
+        else delete entry.scenario.FF[fId];
       });
     }
     Object.entries(entry.formal).forEach(([key,team])=>{
-      if(key.startsWith('FF')){
-        const ffGame=ffGames.find(g=>g.teams.includes(team));
-        if(!ffGame)delete entry.formal[key];
-      }
+      if(key.startsWith('FF')){const g=activeFF.find(x=>x.teams.includes(team));if(!g)delete entry.formal[key];}
     });
-    clearDownstream(entry,'FF','');
+    clearDownstream(entry,'FF');
   }else if(round==='FF'){
-    const e8Games=buildE8Games(entry);
-    const ffGames=buildFFGames(entry,e8Games);
-    const champGames=buildChampGame(entry,ffGames);
+    const e8Data=buildE8Data(entry);
+    const ffData=buildFFData(entry,e8Data);
+    const champData=buildChampData(entry,ffData);
+    const activeC=champData.filter(g=>g.teams[0]&&g.teams[1]);
     if(entry.scenario.CHAMP){
       Object.keys(entry.scenario.CHAMP).forEach(cId=>{
-        const cGame=champGames.find(g=>g.id===cId);
-        if(cGame){
-          const picked=entry.scenario.CHAMP[cId];
-          if(picked&&!cGame.teams.includes(picked))delete entry.scenario.CHAMP[cId];
-        }else{delete entry.scenario.CHAMP[cId];}
+        const g=activeC.find(x=>x.id===cId);
+        if(g){if(entry.scenario.CHAMP[cId]&&!g.teams.includes(entry.scenario.CHAMP[cId]))delete entry.scenario.CHAMP[cId];}
+        else delete entry.scenario.CHAMP[cId];
       });
     }
     Object.entries(entry.formal).forEach(([key,team])=>{
-      if(key.startsWith('CHAMP')){
-        const cGame=champGames.find(g=>g.teams.includes(team));
-        if(!cGame)delete entry.formal[key];
-      }
+      if(key.startsWith('CHAMP')){const g=activeC.find(x=>x.teams.includes(team));if(!g)delete entry.formal[key];}
     });
   }
 }
+
+// ─── Rendering ─────────────────────────────────────────────
 
 function render(){
   const entry=activeEntry();
   let html='<div class="flex flex-col h-screen bg-gray-950">';
 
-  // Header
-  html+='<header class="bg-gray-900 border-b border-gray-800 px-5 py-3 flex items-center justify-between"><div><h1 class="text-xl font-bold">🏀 Survivor Planner</h1><p class="text-xs text-gray-500">Formal Pick = your survivor pick. Scenario Picks = who you think wins each game.</p></div><button onclick="reset()" class="text-xs text-red-400 hover:text-red-300 px-3 py-1 border border-red-800 rounded">Reset</button></header>';
+  html+='<header class="bg-gray-900 border-b border-gray-800 px-5 py-3 flex items-center justify-between"><div><h1 class="text-xl font-bold">🏀 Survivor Planner</h1><p class="text-xs text-gray-500">Click team = scenario winner. Click ☆ = formal survivor pick.</p></div><button onclick="reset()" class="text-xs text-red-400 hover:text-red-300 px-3 py-1 border border-red-800 rounded">Reset</button></header>';
 
-  // Entry tabs
   html+='<div class="bg-gray-900 border-b border-gray-800 px-5 flex gap-0 overflow-x-auto">';
   state.entries.forEach(e=>{
     const active=e.id===state.activeEntryId;
@@ -303,135 +224,177 @@ function render(){
   });
   html+='</div>';
 
-  // Main content
-  html+='<div class="flex-1 overflow-auto bg-gray-950 p-6">';
-  if(entry){
-    html+=renderEntry(entry);
-  }else{
-    html+='<div class="text-center text-gray-500 mt-20">No entry selected</div>';
-  }
+  html+='<div class="flex-1 overflow-auto bg-gray-950 p-4">';
+  if(entry)html+=renderBracket(entry);
+  else html+='<div class="text-center text-gray-500 mt-20">No entry selected</div>';
   html+='</div></div>';
 
   document.getElementById('app').innerHTML=html;
 }
 
-function renderEntry(entry){
+function renderBracket(entry){
   const burned=entry.burned||[];
-  const e8Games=buildE8Games(entry);
-  const ffGames=buildFFGames(entry,e8Games);
-  const champGames=buildChampGame(entry,ffGames);
-
-  let html='';
-
-  // Burned teams
-  html+='<div class="mb-6"><span class="text-xs font-bold text-red-400 uppercase tracking-wide">Burned: </span><span class="text-xs text-red-300">'+burned.join(', ')+'</span></div>';
+  const e8Data=buildE8Data(entry);
+  const ffData=buildFFData(entry,e8Data);
+  const champData=buildChampData(entry,ffData);
 
   // Formal picks summary
+  let html='<div class="mb-3 flex flex-wrap items-center gap-3">';
+  html+='<span class="text-xs font-bold text-red-400 uppercase">Burned:</span><span class="text-xs text-red-300">'+burned.join(', ')+'</span>';
   const formals=Object.entries(entry.formal);
   if(formals.length){
-    html+='<div class="mb-6 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3"><div class="text-xs font-bold text-yellow-400 uppercase tracking-wide mb-2">Your Formal Picks</div><div class="flex flex-wrap gap-2">';
+    html+='<span class="text-gray-600 mx-1">|</span><span class="text-xs font-bold text-yellow-400 uppercase">Formal:</span>';
     formals.forEach(([key,team])=>{
       const t=TEAMS.find(x=>x.name===team);
-      const roundLabel=key.split('_')[0];
-      html+='<span class="px-2 py-1 bg-yellow-800/60 border border-yellow-600 rounded text-xs text-yellow-100"><span class="text-yellow-400">'+roundLabel+':</span> <span class="font-bold">'+(t?t.seed+' ':'')+team+'</span> ★</span>';
+      const rl=key.split('_')[0];
+      html+='<span class="px-1.5 py-0.5 bg-yellow-800/60 border border-yellow-600 rounded text-[10px] text-yellow-100">'+rl+': '+(t?t.seed+' ':'')+team+' ★</span>';
     });
-    html+='</div></div>';
   }
+  html+='</div>';
 
-  // S16 Day 1: South & West
-  html+=renderDay(entry,'S16',ROUNDS.S16.days[0],ROUNDS.S16.games);
-  // S16 Day 2: East & Midwest
-  html+=renderDay(entry,'S16',ROUNDS.S16.days[1],ROUNDS.S16.games);
+  // S16 games by region
+  const eastS16=S16_GAMES.filter(g=>g.region==='East');
+  const southS16=S16_GAMES.filter(g=>g.region==='South');
+  const westS16=S16_GAMES.filter(g=>g.region==='West');
+  const midwestS16=S16_GAMES.filter(g=>g.region==='Midwest');
 
-  // E8
-  if(e8Games.length){
-    html+=renderDay(entry,'E8',ROUNDS.E8.days[0],e8Games);
-    html+=renderDay(entry,'E8',ROUNDS.E8.days[1],e8Games);
-  }
+  // E8 by region
+  const eastE8=e8Data.find(g=>g.id==='E8_E');
+  const southE8=e8Data.find(g=>g.id==='E8_S');
+  const westE8=e8Data.find(g=>g.id==='E8_W');
+  const midwestE8=e8Data.find(g=>g.id==='E8_M');
 
   // FF
-  if(ffGames.length){
-    html+=renderDay(entry,'FF',ROUNDS.FF.days[0],ffGames);
-  }
+  const ff1=ffData.find(g=>g.id==='FF_1'); // South/West
+  const ff2=ffData.find(g=>g.id==='FF_2'); // East/Midwest
+  const champ=champData[0];
+
+  html+='<div class="overflow-x-auto"><div class="bracket">';
+
+  // ── Column 1: Left S16 (East top, South bottom) ──
+  html+='<div class="bracket-col s16">';
+  html+='<div class="region-half">';
+  html+='<div class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-1">East</div>';
+  eastS16.forEach(g=>html+=renderGameCard(entry,'S16',g,burned));
+  html+='</div><div class="region-spacer"></div><div class="region-half">';
+  html+='<div class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-1">South</div>';
+  southS16.forEach(g=>html+=renderGameCard(entry,'S16',g,burned));
+  html+='</div></div>';
+
+  // ── Column 2: Left E8 (East top, South bottom) ──
+  html+='<div class="bracket-col e8">';
+  html+='<div class="region-half" style="justify-content:center">';
+  html+='<div class="text-[10px] font-bold text-purple-400 uppercase tracking-wide mb-1">E8</div>';
+  html+=renderGameCard(entry,'E8',eastE8,burned);
+  html+='</div><div class="region-spacer"></div><div class="region-half" style="justify-content:center">';
+  html+='<div class="text-[10px] font-bold text-purple-400 uppercase tracking-wide mb-1">E8</div>';
+  html+=renderGameCard(entry,'E8',southE8,burned);
+  html+='</div></div>';
+
+  // ── Column 3: Center (FF + Championship) ──
+  html+='<div class="bracket-col center">';
+  html+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:100%">';
+
+  // FF_2: East/Midwest (top of center — connects to East on left)
+  html+='<div>';
+  html+='<div class="text-[10px] font-bold text-green-400 uppercase tracking-wide mb-1 text-center">Final Four</div>';
+  html+=renderGameCard(entry,'FF',ff2,burned);
+  html+='</div>';
 
   // Championship
-  if(champGames.length){
-    html+=renderDay(entry,'CHAMP',ROUNDS.CHAMP.days[0],champGames);
-  }
+  html+='<div>';
+  html+='<div class="text-[10px] font-bold text-yellow-400 uppercase tracking-wide mb-1 text-center">Championship</div>';
+  html+=renderGameCard(entry,'CHAMP',champ,burned);
+  html+='</div>';
 
+  // FF_1: South/West (bottom of center — connects to South on left)
+  html+='<div>';
+  html+='<div class="text-[10px] font-bold text-green-400 uppercase tracking-wide mb-1 text-center">Final Four</div>';
+  html+=renderGameCard(entry,'FF',ff1,burned);
+  html+='</div>';
+
+  html+='</div></div>';
+
+  // ── Column 4: Right E8 (West top, Midwest bottom) ──
+  html+='<div class="bracket-col e8">';
+  html+='<div class="region-half" style="justify-content:center">';
+  html+='<div class="text-[10px] font-bold text-purple-400 uppercase tracking-wide mb-1">E8</div>';
+  html+=renderGameCard(entry,'E8',westE8,burned);
+  html+='</div><div class="region-spacer"></div><div class="region-half" style="justify-content:center">';
+  html+='<div class="text-[10px] font-bold text-purple-400 uppercase tracking-wide mb-1">E8</div>';
+  html+=renderGameCard(entry,'E8',midwestE8,burned);
+  html+='</div></div>';
+
+  // ── Column 5: Right S16 (West top, Midwest bottom) ──
+  html+='<div class="bracket-col s16">';
+  html+='<div class="region-half">';
+  html+='<div class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-1">West</div>';
+  westS16.forEach(g=>html+=renderGameCard(entry,'S16',g,burned));
+  html+='</div><div class="region-spacer"></div><div class="region-half">';
+  html+='<div class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-1">Midwest</div>';
+  midwestS16.forEach(g=>html+=renderGameCard(entry,'S16',g,burned));
+  html+='</div></div>';
+
+  html+='</div></div>';
   return html;
 }
 
-function renderDay(entry,round,day,allGames){
-  const games=allGames.filter(day.filter);
-  if(!games.length)return '';
-
-  const burned=entry.burned||[];
-  const fKey=formalKey(round,day.formalGroup);
+function renderGameCard(entry,round,game,burned){
+  if(!game)return '';
+  const hasBothTeams=game.teams[0]&&game.teams[1];
+  const hasAnyTeam=game.teams[0]||game.teams[1];
+  const fg=getFormalGroup(round,game);
+  const fKey=formalKey(round,fg);
   const formalPick=entry.formal[fKey]||null;
   const otherFormals=Object.entries(entry.formal).filter(([k])=>k!==fKey).map(([,v])=>v);
+  const scenarioPick=(entry.scenario[round]||{})[game.id]||null;
+  const isFormalGame=formalPick&&(game.teams.includes(formalPick));
 
-  let html='<div class="mb-8"><div class="text-sm font-bold text-blue-400 uppercase tracking-wide mb-3">'+day.label+'</div>';
-  html+='<div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">';
+  let cls='game-card';
+  if(isFormalGame)cls+=' formal-game';
+  if(!hasAnyTeam)cls+=' placeholder';
 
-  games.forEach(game=>{
-    const scenarioPick=(entry.scenario[round]||{})[game.id]||null;
-    const isFormalGame=formalPick&&game.teams.includes(formalPick);
+  let html='<div class="'+cls+'">';
+  html+='<div class="region-label">'+game.region+'</div>';
 
-    html+='<div class="rounded-lg border p-3 '+(isFormalGame?'bg-yellow-900/30 border-yellow-600/60':'bg-gray-800/40 border-gray-700')+'">';
-    html+='<div class="text-xs text-gray-400 mb-2">'+game.region+'</div>';
+  game.teams.forEach(team=>{
+    if(!team){
+      // TBD slot
+      html+='<div class="team-row"><div class="tbd-slot">TBD</div><div class="star-btn" style="opacity:0.2">☆</div></div>';
+      return;
+    }
 
-    game.teams.forEach(team=>{
-      const t=TEAMS.find(x=>x.name===team);
-      const seed=t?t.seed:'?';
-      const isBurned=burned.includes(team);
-      const isFormal=formalPick===team;
-      const isScenario=scenarioPick===team;
-      const isOtherFormal=otherFormals.includes(team);
+    const t=TEAMS.find(x=>x.name===team);
+    const seed=t?t.seed:'?';
+    const isBurned=burned.includes(team);
+    const isFormal=formalPick===team;
+    const isScenario=scenarioPick===team;
+    const isOtherFormal=otherFormals.includes(team);
 
-      // Scenario button
-      let scenCls='';
-      if(isScenario&&!isFormal){
-        scenCls='bg-gray-600 border-gray-400 text-white';
-      }else if(isFormal){
-        scenCls='bg-yellow-800/40 border-yellow-600/40 text-yellow-200 opacity-50';
-      }else{
-        scenCls='bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700';
-      }
+    // Scenario button classes
+    let btnCls='team-btn';
+    if(isFormal)btnCls+=' formal-picked';
+    else if(isScenario)btnCls+=' picked';
 
-      // Formal button
-      let formalCls='';
-      let formalDisabled=false;
-      if(isFormal){
-        formalCls='bg-yellow-700 border-yellow-500 text-yellow-100';
-      }else if(isBurned||isOtherFormal){
-        formalCls='bg-gray-900 border-gray-800 text-gray-600 cursor-not-allowed';
-        formalDisabled=true;
-      }else{
-        formalCls='bg-gray-800 border-gray-700 text-gray-400 hover:bg-yellow-900/30 hover:border-yellow-700';
-      }
+    // Star button
+    let starCls='star-btn';
+    let starDisabled=false;
+    if(isFormal){starCls+=' active';}
+    else if(isBurned||isOtherFormal){starDisabled=true;}
 
-      html+='<div class="flex items-center gap-1.5 mb-1.5">';
+    const esc=team.replace(/'/g,"\\'");
 
-      // Winner pick button (scenario)
-      html+='<button onclick="pickScenario(\''+entry.id+'\',\''+round+'\',\''+game.id+'\',\''+team.replace(/'/g,"\\'")+'\')" class="flex-1 text-left px-2 py-1.5 rounded text-xs border '+scenCls+'">';
-      html+='<span class="font-bold">'+seed+'</span> '+team;
-      if(isScenario&&!isFormal)html+=' ✓';
-      if(isBurned)html+=' <span class="text-red-400 text-[10px]">BURNED</span>';
-      html+='</button>';
-
-      // Formal pick button (star)
-      html+='<button onclick="pickFormal(\''+entry.id+'\',\''+round+'\','+day.formalGroup+',\''+game.id+'\',\''+team.replace(/'/g,"\\'")+'\')" '+(formalDisabled?'disabled ':'')+' class="w-8 h-8 flex items-center justify-center rounded border text-sm '+formalCls+'" title="'+(formalDisabled?(isBurned?'Burned':'Already used as formal'):'Set as formal pick')+'">';
-      html+=isFormal?'★':'☆';
-      html+='</button>';
-
-      html+='</div>';
-    });
-
+    html+='<div class="team-row">';
+    html+='<button class="'+btnCls+'" onclick="pickScenario(\''+entry.id+'\',\''+round+'\',\''+game.id+'\',\''+esc+'\')">';
+    html+='<span class="seed">'+seed+'</span> '+team;
+    if(isScenario&&!isFormal)html+=' ✓';
+    if(isBurned)html+=' <span class="burned-tag">BURNED</span>';
+    html+='</button>';
+    html+='<button class="'+starCls+'" '+(starDisabled?'disabled':'')+' onclick="pickFormal(\''+entry.id+'\',\''+round+'\','+fg+',\''+game.id+'\',\''+esc+'\')">'+(isFormal?'★':'☆')+'</button>';
     html+='</div>';
   });
 
-  html+='</div></div>';
+  html+='</div>';
   return html;
 }
 
